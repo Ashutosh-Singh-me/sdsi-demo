@@ -109,9 +109,11 @@ export function confirmReservation(reservationId, userId) {
 
   const db = getDb();
 
-  return db.transaction(() => {
-    expireStaleReservations(db);
+  // Run cleanup BEFORE the transaction so the expiry UPDATE persists
+  // even if the transaction throws and rolls back.
+  expireStaleReservations(db);
 
+  return db.transaction(() => {
     const reservation = db.prepare(
       'SELECT * FROM reservations WHERE id = ? AND user_id = ?'
     ).get(reservationId, userId.trim());
@@ -161,9 +163,11 @@ export function cancelReservation(reservationId, userId) {
 
   const db = getDb();
 
-  return db.transaction(() => {
-    expireStaleReservations(db);
+  // Run cleanup BEFORE the transaction so the expiry UPDATE persists
+  // even if the transaction throws and rolls back.
+  expireStaleReservations(db);
 
+  return db.transaction(() => {
     const reservation = db.prepare(
       'SELECT * FROM reservations WHERE id = ? AND user_id = ?'
     ).get(reservationId, userId.trim());

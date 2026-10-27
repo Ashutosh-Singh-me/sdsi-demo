@@ -8,7 +8,7 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '1mb', strict: true }));
 
 // Initialize database on startup
 getDb();
@@ -21,6 +21,14 @@ app.use('/api/reservations', reservationRoutes);
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
+});
+
+// Catch body-parser JSON parse errors (throw by strict mode on non-object/array root)
+app.use((err, _req, res, next) => {
+  if (err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'Invalid JSON in request body' });
+  }
+  next(err);
 });
 
 // Global error handler

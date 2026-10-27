@@ -9,7 +9,10 @@ let db = null;
 
 export function getDb() {
   if (!db) {
-    const dbPath = join(__dirname, '..', 'inventory.db');
+    const testPath = process.env.DB_PATH;
+    const dbPath = testPath
+      ? join(__dirname, '..', testPath)
+      : join(__dirname, '..', 'inventory.db');
     db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
@@ -55,4 +58,9 @@ export function closeDb() {
     db.close();
     db = null;
   }
+}
+
+/** Only for tests: reset the singleton so the next test file gets a fresh DB */
+export function resetDbSingleton() {
+  closeDb();
 }
