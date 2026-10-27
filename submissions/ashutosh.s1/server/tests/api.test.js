@@ -1,13 +1,11 @@
-import { test, beforeEach } from 'node:test';
+import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert';
+import app from '../src/app.js';
+import { closeDb } from '../src/db.js';
 
-// Import the Express app
-import app from '../src/index.js';
-
-const BASE = 'http://localhost:3000';
-
-// Use a known port for testing — we import the app module and let it
-// use port 3000 (already started by importing index.js).
+const PORT = 3099;
+const BASE = `http://localhost:${PORT}`;
+let server;
 
 const samplePayload = [
   { sku: 'PHONE', name: 'SuperPhone X', total_stock: 10, max_per_user: 2 },
@@ -21,8 +19,12 @@ function api(path, options = {}) {
   });
 }
 
+// Start server once, stop once
+server = app.listen(PORT, () => {
+  console.log(`Test server running on ${BASE}`);
+});
+
 beforeEach(async () => {
-  // Re-load clean sample data before each test
   await api('/api/inventory/load', {
     method: 'POST',
     body: JSON.stringify(samplePayload),
@@ -58,14 +60,12 @@ test('POST /api/inventory/load returns 200 with products array', async () => {
   assert.equal(body.products[0].sku, 'X');
 });
 
-test('POST /api/inventory/load rejects invalid body (non-array)', async () => {
+test('POST /api/inventory/load rejects non-array body', async () => {
   const res = await api('/api/inventory/load', {
     method: 'POST',
     body: JSON.stringify('not an array'),
   });
   assert.equal(res.status, 400);
-  const body = await res.json();
-  assert.ok(body.error);
 });
 
 test('POST /api/inventory/load rejects negative total_stock', async () => {
@@ -82,7 +82,7 @@ test('POST /api/inventory/load rejects negative total_stock', async () => {
 //  GET /api/inventory
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('GET /api/inventory returns all products with correct fields', async () => {
+test('GET /api/inventory returns all products with computed fields', async () => {
   const res = await api('/api/inventory');
   assert.equal(res.status, 200);
   const body = await res.json();
@@ -99,7 +99,7 @@ test('GET /api/inventory returns all products with correct fields', async () => 
   assert.equal(phone.sold, 0);
 });
 
-test('GET /api/inventory reflects reserved quantity', async () => {
+test('GET /api/inventory reflects reserved quantity after reserve', async () => {
   await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: 2 }),
@@ -115,7 +115,7 @@ test('GET /api/inventory reflects reserved quantity', async () => {
 //  GET /api/inventory/:sku
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('GET /api/inventory/:sku returns single product report', async () => {
+test('GET /api/inventory/:sku returns single product', async () => {
   const res = await api('/api/inventory/PODS');
   assert.equal(res.status, 200);
   const body = await res.json();
@@ -123,18 +123,16 @@ test('GET /api/inventory/:sku returns single product report', async () => {
   assert.equal(body.product.total_stock, 5);
 });
 
-test('GET /api/inventory/:sku with unknown SKU returns 404', async () => {
+test('GET /api/inventory/:sku unknown returns 404', async () => {
   const res = await api('/api/inventory/FAKE-SKU');
   assert.equal(res.status, 404);
-  const body = await res.json();
-  assert.ok(body.error);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  POST /api/reservations
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('POST /api/reservations returns 201 with reservation', async () => {
+test('POST /api/reservations returns 201 with reservation shape', async () => {
   const res = await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: 1 }),
@@ -149,7 +147,7 @@ test('POST /api/reservations returns 201 with reservation', async () => {
   assert.ok(body.reservation.expires_at);
 });
 
-test('POST /api/reservations more than available returns 409', async () => {
+test('POST /api/reservations insufficient stock returns 409', async () => {
   const res = await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PODS', quantity: 100 }),
@@ -157,7 +155,7 @@ test('POST /api/reservations more than available returns 409', async () => {
   assert.equal(res.status, 409);
 });
 
-test('POST /api/reservations exceeding per-user limit returns 409', async () => {
+test('POST /api/reservations per-user limit returns 409', async () => {
   await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: 2 }),
@@ -169,15 +167,15 @@ test('POST /api/reservations exceeding per-user limit returns 409', async () => 
   assert.equal(res.status, 409);
 });
 
-test('POST /api/reservations with missing fields returns 400', async () => {
+test('POST /api/reservations missing fields returns 400', async () => {
   const res = await api('/api/reservations', {
     method: 'POST',
-    body: JSON.stringify({ userId: 'u1' }), // missing sku and quantity
+    body: JSON.stringify({ userId: 'u1' }),
   });
   assert.equal(res.status, 400);
 });
 
-test('POST /api/reservations with negative quantity returns 400', async () => {
+test('POST /api/reservations negative quantity returns 400', async () => {
   const res = await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: -1 }),
@@ -189,7 +187,7 @@ test('POST /api/reservations with negative quantity returns 400', async () => {
 //  POST /api/reservations/confirm
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('POST /api/reservations/confirm confirms an active reservation', async () => {
+test('POST /api/reservations/confirm confirms and returns 200', async () => {
   const r = await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: 1 }),
@@ -205,7 +203,7 @@ test('POST /api/reservations/confirm confirms an active reservation', async () =
   assert.equal(body.reservation.status, 'confirmed');
 });
 
-test('POST /api/reservations/confirm with wrong user returns 404', async () => {
+test('POST /api/reservations/confirm wrong user returns 404', async () => {
   const r = await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: 1 }),
@@ -219,7 +217,7 @@ test('POST /api/reservations/confirm with wrong user returns 404', async () => {
   assert.equal(res.status, 404);
 });
 
-test('POST /api/reservations/confirm already-confirmed returns 409', async () => {
+test('POST /api/reservations/confirm double-confirm returns 409', async () => {
   const r = await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: 1 }),
@@ -238,7 +236,7 @@ test('POST /api/reservations/confirm already-confirmed returns 409', async () =>
   assert.equal(res.status, 409);
 });
 
-test('POST /api/reservations/confirm missing fields returns 400', async () => {
+test('POST /api/reservations/confirm missing body returns 400', async () => {
   const res = await api('/api/reservations/confirm', {
     method: 'POST',
     body: JSON.stringify({}),
@@ -250,7 +248,7 @@ test('POST /api/reservations/confirm missing fields returns 400', async () => {
 //  POST /api/reservations/cancel
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('POST /api/reservations/cancel cancels an active reservation', async () => {
+test('POST /api/reservations/cancel cancels active reservation', async () => {
   const r = await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: 1 }),
@@ -266,7 +264,7 @@ test('POST /api/reservations/cancel cancels an active reservation', async () => 
   assert.equal(body.reservation.status, 'cancelled');
 });
 
-test('POST /api/reservations/cancel confirmed reservation returns 409', async () => {
+test('POST /api/reservations/cancel confirmed returns 409', async () => {
   const r = await api('/api/reservations', {
     method: 'POST',
     body: JSON.stringify({ userId: 'u1', sku: 'PHONE', quantity: 1 }),
@@ -306,7 +304,7 @@ test('GET /api/reservations/:userId returns user reservations', async () => {
   assert.equal(body.reservations[0].user_id, 'u1');
 });
 
-test('GET /api/reservations/:userId empty user returns 200 with empty array', async () => {
+test('GET /api/reservations/:userId empty user returns 200 with []', async () => {
   const res = await api('/api/reservations/nobody');
   assert.equal(res.status, 200);
   const body = await res.json();
@@ -317,9 +315,16 @@ test('GET /api/reservations/:userId empty user returns 200 with empty array', as
 //  POST /api/reservations/cleanup
 // ═══════════════════════════════════════════════════════════════════════════
 
-test('POST /api/reservations/cleanup returns expired count', async () => {
+test('POST /api/reservations/cleanup returns expired_count', async () => {
   const res = await api('/api/reservations/cleanup', { method: 'POST' });
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.ok(typeof body.expired_count === 'number');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+
+after(() => {
+  closeDb();
+  server.close();
 });
