@@ -1,0 +1,26 @@
+[
+  {
+    "sku": "IPHONE-15",
+    "name": "iPhone 15",
+    "total_stock": 100,
+    "max_per_user": 2
+  },
+  {
+    "sku": "AIRPODS-PRO",
+    "name": "AirPods Pro",
+    "total_stock": 500,
+    "max_per_user": 5
+  },
+  {
+    "sku": "MACBOOK-AIR",
+    "name": "MacBook Air M4",
+    "total_stock": 50,
+    "max_per_user": 1
+  },
+  {
+    "sku": "APPLE-WATCH",
+    "name": "Apple Watch Series 10",
+    "total_stock": 200,
+    "max_per_user": 3
+  }
+]
